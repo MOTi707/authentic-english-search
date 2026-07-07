@@ -17,6 +17,9 @@
 
 <img width="1155" height="893" alt="QQ20260707-101754" src="https://github.com/user-attachments/assets/c91d91a7-d6f4-4cdd-902f-5d32a200408d" />
 
+<img width="1043" height="786" alt="image" src="https://github.com/user-attachments/assets/09ebae16-86c6-4437-a8bd-2d6328dafa62" />
+
+
 ---
 
 ## 功能一览
