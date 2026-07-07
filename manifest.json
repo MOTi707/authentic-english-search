@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "Authentic English Search - 地道英语搜",
+  "version": "1.2",
+  "description": "专为深度英语学习者打造。一键在顶级英语刊物中寻找最鲜活、最现代的表达例句，助你掌握真正的母语思维。 [作者/ Author: Milton Lee  ;  更新/ Update: 2026-7-7]",
+  "author": "Milton Lee",
+  "homepage_url": "https://github.com/MOTi707",
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+
+  "permissions": [
+    "storage"
+  ],
+
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "Authentic English Search"
+  },
+
+  "content_scripts": [
+    {
+      "matches": [
+        "*://www.google.com/search*",
+        "*://www.google.co.uk/search*",
+        "*://www.google.co.jp/search*",
+        "*://www.google.com.hk/search*",
+        "*://www.google.com.tw/search*",
+        "*://www.google.com.au/search*",
+        "*://www.google.com.sg/search*",
+        "*://www.google.ca/search*",
+        "*://www.google.de/search*",
+        "*://www.google.fr/search*"
+      ],
+      "js": ["content/content.js"],
+      "css": ["content/styles.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}
