@@ -12,11 +12,10 @@
 
 本扩展专为这类需求设计：在 Google 搜索页自动生成一个浮动面板，让你一键将搜索限定到全球顶级英语刊物，**1 秒内找到地道用法**。
 
-
-<img width="1155" height="893" alt="QQ20260707-101754" src="https://github.com/user-attachments/assets/c91d91a7-d6f4-4cdd-902f-5d32a200408d" />
-
 <img width="277" height="421" alt="Screenshot 2026-07-07 101654" src="https://github.com/user-attachments/assets/62903499-d0f3-47fc-9a9f-aaed5fab9ce7" />
 
+
+<img width="1155" height="893" alt="QQ20260707-101754" src="https://github.com/user-attachments/assets/c91d91a7-d6f4-4cdd-902f-5d32a200408d" />
 
 ---
 
