@@ -7,7 +7,7 @@ const i18n = {
 };
 
 // 2. 站点数据
-const primarySites = [
+const defaultPrimarySites = [
     { name: "The Economist", domain: "economist.com" },
     { name: "BBC News", domain: "bbc.com" },
     { name: "Washington Post", domain: "washingtonpost.com" },
@@ -15,7 +15,7 @@ const primarySites = [
     { name: "SCMP", domain: "scmp.com" }
 ];
 
-const secondarySites = [
+const defaultSecondarySites = [
     { name: "Vox", domain: "vox.com" },
     { name: "The New York Times", domain: "nytimes.com" },
     { name: "Bloomberg", domain: "bloomberg.com" },
@@ -27,9 +27,63 @@ const secondarySites = [
     { name: "National Geographic", domain: "nationalgeographic.com" }
 ];
 
+let primarySites = [...defaultPrimarySites];
+let secondarySites = [...defaultSecondarySites];
+let customSites = [];
+
 // 2.5 站点排序持久化（chrome.storage.sync）
 let dragSrcDomain = null;
 let dragSrcContainer = null;
+let panelExpanded = true;
+
+async function loadPanelState() {
+    try {
+        const result = await chrome.storage.local.get('panelExpanded');
+        if (typeof result.panelExpanded === 'boolean') {
+            panelExpanded = result.panelExpanded;
+        }
+    } catch (e) {}
+}
+
+function savePanelState() {
+    try {
+        chrome.storage.local.set({ panelExpanded: panelExpanded });
+    } catch (e) {}
+}
+
+async function loadCustomSites() {
+    try {
+        const result = await chrome.storage.sync.get('customSites');
+        if (result.customSites && Array.isArray(result.customSites)) {
+            customSites = result.customSites;
+        }
+    } catch (e) {}
+}
+
+function saveCustomSites() {
+    try {
+        chrome.storage.sync.set({ customSites: customSites });
+    } catch (e) {}
+}
+
+function addCustomSite(name, domain) {
+    const cleanedDomain = domain.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    if (!name.trim() || !cleanedDomain) return false;
+    // 检查是否已存在
+    const allSites = [...primarySites, ...secondarySites, ...customSites];
+    if (allSites.some(s => s.domain === cleanedDomain)) return false;
+    customSites.push({ name: name.trim(), domain: cleanedDomain });
+    saveCustomSites();
+    return true;
+}
+
+function removeCustomSite(domain) {
+    const idx = customSites.findIndex(s => s.domain === domain);
+    if (idx !== -1) {
+        customSites.splice(idx, 1);
+        saveCustomSites();
+    }
+}
 
 async function loadSiteOrder() {
     try {
@@ -104,57 +158,81 @@ function createFloatingPanel() {
     const panel = document.createElement('div');
     panel.id = 'site-search-floating-panel';
 
+    // 缩小面板按钮
+    const minimizeBtn = document.createElement('button');
+    minimizeBtn.className = 'panel-minimize-btn';
+    minimizeBtn.innerText = '−';
+    minimizeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        panelExpanded = !panelExpanded;
+        panel.classList.toggle('panel-collapsed', !panelExpanded);
+        savePanelState();
+    });
+    panel.appendChild(minimizeBtn);
+
+    // 缩小状态显示的扩展图标（fetch + blob URL 绕过 CSP）
+    const collapsedIcon = document.createElement('img');
+    collapsedIcon.className = 'panel-collapsed-icon';
+    const iconUrl = chrome.runtime.getURL('icons/icon128.png');
+    fetch(iconUrl)
+        .then(r => r.blob())
+        .then(blob => { collapsedIcon.src = URL.createObjectURL(blob); })
+        .catch(() => {});
+    panel.appendChild(collapsedIcon);
+
     const title = document.createElement('div');
     title.className = 'panel-title';
     title.innerText = i18n.title;
     panel.appendChild(title);
 
     const createBtnDOM = (site, container) => {
+        const isCustom = container === 'custom';
         const btn = document.createElement('button');
         btn.className = 'site-search-btn';
         btn.dataset.domain = site.domain;
         btn.dataset.dragContainer = container;
-        btn.draggable = true;
+        btn.draggable = !isCustom;
 
-        // 拖拽事件
-        btn.addEventListener('dragstart', (e) => {
-            dragSrcDomain = site.domain;
-            dragSrcContainer = container;
-            btn.classList.add('dragging');
-            e.dataTransfer.effectAllowed = 'move';
-        });
-        btn.addEventListener('dragend', () => {
-            btn.classList.remove('dragging');
-            panel.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
-        });
-        btn.addEventListener('dragover', (e) => {
-            if (dragSrcContainer !== container) return;
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-            btn.classList.add('drag-over');
-        });
-        btn.addEventListener('dragleave', () => {
-            btn.classList.remove('drag-over');
-        });
-        btn.addEventListener('drop', (e) => {
-            e.preventDefault();
-            btn.classList.remove('drag-over');
-            if (!dragSrcDomain || dragSrcDomain === site.domain || dragSrcContainer !== container) return;
-            const sitesArr = container === 'primary' ? primarySites : secondarySites;
-            const fromIdx = sitesArr.findIndex(s => s.domain === dragSrcDomain);
-            const toIdx = sitesArr.findIndex(s => s.domain === site.domain);
-            if (fromIdx === -1 || toIdx === -1) return;
-            const [moved] = sitesArr.splice(fromIdx, 1);
-            sitesArr.splice(toIdx, 0, moved);
-            // 重新排列 DOM
-            const parentEl = container === 'primary' ? panel : moreContainer;
-            parentEl.querySelectorAll('.site-search-btn[data-drag-container="' + container + '"]').forEach(b => b.remove());
-            const refNode = container === 'primary' ? searchInput : null;
-            sitesArr.forEach(s => parentEl.insertBefore(createBtnDOM(s, container), refNode));
-            saveSiteOrder();
-            dragSrcDomain = null;
-            dragSrcContainer = null;
-        });
+        if (!isCustom) {
+            // 拖拽事件（仅内置站点支持）
+            btn.addEventListener('dragstart', (e) => {
+                dragSrcDomain = site.domain;
+                dragSrcContainer = container;
+                btn.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+            });
+            btn.addEventListener('dragend', () => {
+                btn.classList.remove('dragging');
+                panel.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+            });
+            btn.addEventListener('dragover', (e) => {
+                if (dragSrcContainer !== container) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                btn.classList.add('drag-over');
+            });
+            btn.addEventListener('dragleave', () => {
+                btn.classList.remove('drag-over');
+            });
+            btn.addEventListener('drop', (e) => {
+                e.preventDefault();
+                btn.classList.remove('drag-over');
+                if (!dragSrcDomain || dragSrcDomain === site.domain || dragSrcContainer !== container) return;
+                const sitesArr = container === 'primary' ? primarySites : secondarySites;
+                const fromIdx = sitesArr.findIndex(s => s.domain === dragSrcDomain);
+                const toIdx = sitesArr.findIndex(s => s.domain === site.domain);
+                if (fromIdx === -1 || toIdx === -1) return;
+                const [moved] = sitesArr.splice(fromIdx, 1);
+                sitesArr.splice(toIdx, 0, moved);
+                const parentEl = container === 'primary' ? panel : moreContainer;
+                parentEl.querySelectorAll('.site-search-btn[data-drag-container="' + container + '"]').forEach(b => b.remove());
+                const refNode = container === 'primary' ? searchInput : null;
+                sitesArr.forEach(s => parentEl.insertBefore(createBtnDOM(s, container), refNode));
+                saveSiteOrder();
+                dragSrcDomain = null;
+                dragSrcContainer = null;
+            });
+        }
 
         const icon = document.createElement('img');
         icon.className = 'site-icon';
@@ -163,6 +241,15 @@ function createFloatingPanel() {
         const text = document.createElement('span');
         text.innerText = site.name;
         btn.appendChild(text);
+
+        // 自定义站点添加删除按钮
+        if (isCustom) {
+            const delBtn = document.createElement('span');
+            delBtn.className = 'site-delete-btn';
+            delBtn.innerText = '×';
+            delBtn.title = isChinese ? '删除站点' : 'Remove site';
+            btn.appendChild(delBtn);
+        }
         return btn;
     };
 
@@ -209,6 +296,43 @@ function createFloatingPanel() {
     moreContainer.id = 'more-sites-container';
     secondarySites.forEach(site => moreContainer.appendChild(createBtnDOM(site, 'secondary')));
 
+    // 自定义站点
+    customSites.forEach(site => moreContainer.appendChild(createBtnDOM(site, 'custom')));
+
+    // 添加站点按钮
+    const addSiteBtn = document.createElement('button');
+    addSiteBtn.className = 'site-search-btn toggle-btn';
+    addSiteBtn.innerText = isChinese ? '+ 添加站点' : '+ Add site';
+    addSiteBtn.id = 'site-search-add-btn';
+    moreContainer.appendChild(addSiteBtn);
+
+    // 添加站点表单
+    const addForm = document.createElement('div');
+    addForm.className = 'add-site-form';
+    addForm.style.display = 'none';
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.className = 'site-search-input';
+    nameInput.placeholder = isChinese ? '站点名称 (如 CNN)' : 'Site name (e.g. CNN)';
+    const domainInput = document.createElement('input');
+    domainInput.type = 'text';
+    domainInput.className = 'site-search-input';
+    domainInput.placeholder = isChinese ? '域名 (如 cnn.com)' : 'Domain (e.g. cnn.com)';
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = 'site-search-btn toggle-btn';
+    confirmBtn.innerText = isChinese ? '确认添加' : 'Add';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'site-search-btn';
+    cancelBtn.innerText = isChinese ? '取消' : 'Cancel';
+    addForm.appendChild(nameInput);
+    addForm.appendChild(domainInput);
+    const formBtns = document.createElement('div');
+    formBtns.className = 'form-btn-group';
+    formBtns.appendChild(confirmBtn);
+    formBtns.appendChild(cancelBtn);
+    addForm.appendChild(formBtns);
+    moreContainer.appendChild(addForm);
+
     const toggleBtn = document.createElement('button');
     toggleBtn.className = 'site-search-btn toggle-btn';
     toggleBtn.innerText = i18n.showMore;
@@ -216,12 +340,60 @@ function createFloatingPanel() {
     panel.appendChild(toggleBtn);
     panel.appendChild(moreContainer);
 
+    // 根据初始状态初始化面板
+    if (!panelExpanded) {
+        panel.classList.add('panel-collapsed');
+    }
+
     // 事件委托
     panel.addEventListener('click', (e) => {
+        // 缩小状态下点击展开面板
+        if (panel.classList.contains('panel-collapsed')) {
+            panelExpanded = true;
+            panel.classList.remove('panel-collapsed');
+            savePanelState();
+            return;
+        }
         if (e.target.closest('#site-search-toggle-btn')) {
             const isHidden = moreContainer.style.display === '' || moreContainer.style.display === 'none';
             moreContainer.style.display = isHidden ? 'flex' : 'none';
             toggleBtn.innerText = isHidden ? i18n.showLess : i18n.showMore;
+            return;
+        }
+        if (e.target.closest('#site-search-add-btn')) {
+            const isFormHidden = addForm.style.display === 'none';
+            addForm.style.display = isFormHidden ? 'flex' : 'none';
+            if (isFormHidden) nameInput.focus();
+            return;
+        }
+        if (e.target.closest('.add-site-form .toggle-btn')) {
+            // 确认添加
+            const success = addCustomSite(nameInput.value, domainInput.value);
+            if (success) {
+                nameInput.value = '';
+                domainInput.value = '';
+                addForm.style.display = 'none';
+                // 重新渲染自定义站点
+                moreContainer.querySelectorAll('[data-drag-container="custom"]').forEach(b => b.remove());
+                const refNode = addSiteBtn;
+                customSites.forEach(s => moreContainer.insertBefore(createBtnDOM(s, 'custom'), refNode));
+            }
+            return;
+        }
+        if (e.target.closest('.add-site-form .site-search-btn:not(.toggle-btn)')) {
+            // 取消
+            addForm.style.display = 'none';
+            nameInput.value = '';
+            domainInput.value = '';
+            return;
+        }
+        if (e.target.closest('.site-delete-btn')) {
+            // 删除自定义站点
+            const delSiteBtn = e.target.closest('.site-search-btn');
+            if (delSiteBtn && delSiteBtn.dataset.domain) {
+                removeCustomSite(delSiteBtn.dataset.domain);
+                delSiteBtn.remove();
+            }
             return;
         }
         if (e.target.closest('.title-search-btn')) { toggleTitleSearch(); return; }
@@ -344,9 +516,12 @@ function appendSiteToSearch(domain) {
 
 // 8. 初始化与高亮
 async function init() {
+    await loadCustomSites();
     await loadSiteOrder();
+    await loadPanelState();
     createFloatingPanel();
     enableAutoHighlight();
+    enableShortcut();
     let timeout = null;
     const observer = new MutationObserver(() => {
         if (timeout) clearTimeout(timeout);
@@ -355,6 +530,19 @@ async function init() {
         }, 300);
     });
     observer.observe(document.body, { childList: true, subtree: true });
+}
+
+function enableShortcut() {
+    document.addEventListener('keydown', (e) => {
+        if (e.altKey && e.key.toLowerCase() === 'm') {
+            e.preventDefault();
+            const panel = document.getElementById('site-search-floating-panel');
+            if (!panel) return;
+            panelExpanded = !panelExpanded;
+            panel.classList.toggle('panel-collapsed', !panelExpanded);
+            savePanelState();
+        }
+    });
 }
 
 function enableAutoHighlight() {

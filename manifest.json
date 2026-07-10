@@ -16,6 +16,13 @@
     "storage"
   ],
 
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/icon128.png"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+
   "action": {
     "default_icon": {
       "16": "icons/icon16.png",

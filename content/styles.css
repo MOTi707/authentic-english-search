@@ -14,6 +14,7 @@
     font-family: Arial, sans-serif;
     max-height: 80vh;
     width: 200px;
+    transition: width 0.2s ease, height 0.2s ease;
 }
 
 #site-search-floating-panel .panel-title {
@@ -141,4 +142,80 @@
 
 .site-search-btn.drag-over {
     border-top: 2px solid #1a73e8;
+}
+
+/* 缩小按钮 */
+.panel-minimize-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 22px;
+    height: 22px;
+    border: none;
+    background: transparent;
+    font-size: 16px;
+    cursor: pointer;
+    color: #5f6368;
+    line-height: 1;
+    z-index: 1;
+}
+.panel-minimize-btn:hover { color: #202124; }
+
+/* 缩小状态显示的扩展图标 */
+.panel-collapsed-icon {
+    display: none;
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+    border: none;
+}
+
+/* 缩小状态：只显示图标区域，无边框无阴影 */
+#site-search-floating-panel.panel-collapsed {
+    width: 40px;
+    height: 40px;
+    padding: 6px;
+    overflow: hidden;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+}
+#site-search-floating-panel.panel-collapsed > *:not(.panel-collapsed-icon) {
+    display: none;
+}
+#site-search-floating-panel.panel-collapsed .panel-collapsed-icon {
+    display: block;
+}
+
+/* 自定义站点删除按钮 */
+.site-delete-btn {
+    margin-left: auto;
+    font-size: 16px;
+    color: #9aa0a6;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 4px;
+}
+.site-delete-btn:hover {
+    color: #d93025;
+}
+
+/* 添加站点表单 */
+.add-site-form {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 4px;
+    padding-top: 8px;
+    border-top: 1px solid #dadce0;
+}
+.form-btn-group {
+    display: flex;
+    gap: 6px;
+}
+.form-btn-group .site-search-btn {
+    flex: 1;
 }
