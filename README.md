@@ -62,13 +62,13 @@
 
 ---
 
-## 内置刊物（14 家）
+## 内置刊物（12 家）
 
 **主面板（5 家）：**
 The Economist、BBC News、Washington Post、Sixth Tone、SCMP
 
-**展开更多（9 家）：**
-Vox、The New York Times、Bloomberg、Reuters、The Guardian、ABC News、The Atlantic、Wired、National Geographic
+**展开更多（7 家）：**
+Vox、The New York Times、Reuters、ABC News、The Atlantic、Wired、National Geographic
 
 ---
 

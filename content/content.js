@@ -18,9 +18,7 @@ const defaultPrimarySites = [
 const defaultSecondarySites = [
     { name: "Vox", domain: "vox.com" },
     { name: "The New York Times", domain: "nytimes.com" },
-    { name: "Bloomberg", domain: "bloomberg.com" },
     { name: "Reuters", domain: "reuters.com" },
-    { name: "The Guardian", domain: "theguardian.com" },
     { name: "ABC News", domain: "abcnews.com" },
     { name: "The Atlantic", domain: "theatlantic.com" },
     { name: "Wired", domain: "wired.com" },
@@ -35,6 +33,7 @@ let customSites = [];
 let dragSrcDomain = null;
 let dragSrcContainer = null;
 let panelExpanded = true;
+let keywordJumpEnabled = true;
 
 async function loadPanelState() {
     try {
@@ -48,6 +47,21 @@ async function loadPanelState() {
 function savePanelState() {
     try {
         chrome.storage.local.set({ panelExpanded: panelExpanded });
+    } catch (e) {}
+}
+
+async function loadKeywordJumpSetting() {
+    try {
+        const result = await chrome.storage.local.get('keywordJumpEnabled');
+        if (typeof result.keywordJumpEnabled === 'boolean') {
+            keywordJumpEnabled = result.keywordJumpEnabled;
+        }
+    } catch (e) {}
+}
+
+function saveKeywordJumpSetting() {
+    try {
+        chrome.storage.local.set({ keywordJumpEnabled: keywordJumpEnabled });
     } catch (e) {}
 }
 
@@ -299,6 +313,28 @@ function createFloatingPanel() {
     // 自定义站点
     customSites.forEach(site => moreContainer.appendChild(createBtnDOM(site, 'custom')));
 
+    // 设置区：关键词跳转开关（位于添加站点按钮上方）
+    const settingRow = document.createElement('div');
+    settingRow.className = 'setting-row';
+    const settingLabel = document.createElement('span');
+    settingLabel.className = 'setting-label';
+    settingLabel.innerText = isChinese ? '关键词跳转' : 'Keyword jump';
+    const keywordToggle = document.createElement('button');
+    keywordToggle.className = 'switch-toggle' + (keywordJumpEnabled ? ' switch-on' : '');
+    keywordToggle.id = 'site-search-keyword-toggle';
+    keywordToggle.setAttribute('role', 'switch');
+    keywordToggle.setAttribute('aria-checked', keywordJumpEnabled ? 'true' : 'false');
+    keywordToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        keywordJumpEnabled = !keywordJumpEnabled;
+        keywordToggle.classList.toggle('switch-on', keywordJumpEnabled);
+        keywordToggle.setAttribute('aria-checked', keywordJumpEnabled ? 'true' : 'false');
+        saveKeywordJumpSetting();
+    });
+    settingRow.appendChild(settingLabel);
+    settingRow.appendChild(keywordToggle);
+    moreContainer.appendChild(settingRow);
+
     // 添加站点按钮
     const addSiteBtn = document.createElement('button');
     addSiteBtn.className = 'site-search-btn toggle-btn';
@@ -519,6 +555,7 @@ async function init() {
     await loadCustomSites();
     await loadSiteOrder();
     await loadPanelState();
+    await loadKeywordJumpSetting();
     createFloatingPanel();
     enableAutoHighlight();
     enableShortcut();
@@ -547,6 +584,7 @@ function enableShortcut() {
 
 function enableAutoHighlight() {
     document.addEventListener('click', function(e) {
+        if (!keywordJumpEnabled) return;
         const targetLink = e.target.closest('a');
         if (targetLink && targetLink.href && targetLink.href.startsWith('http')) {
             const searchBox = document.querySelector('textarea[name="q"], input[name="q"]');
