@@ -2,6 +2,32 @@
 // search.js — 状态检测 / 查询切换 / 搜索执行 / 高亮 / 快捷键
 // ============================================================
 
+// ============================================================
+// 辅助：site: 操作符的提取 / 重建 / 移除（支持 (site:A OR site:B) 组合格式）
+// 注意：域名正则必须排除括号，否则组合查询 "site:scmp.com)" 中的 ")" 会被吞进域名
+// ============================================================
+// 从查询中提取所有 site: 域名（域名不包含空白、引号与括号）
+function extractSiteDomains(q) {
+    const matches = (q || '').match(/site:([^\s"()]+)/gi) || [];
+    return matches.map(m => m.replace(/site:/i, ''));
+}
+
+// 把域名数组重建为 (site:A OR site:B) 组合格式（无域名时返回空串）
+function buildSiteGroup(domains) {
+    if (!domains || !domains.length) return '';
+    return '(' + domains.map(d => `site:${d}`).join(' OR ') + ')';
+}
+
+// 从查询中完整移除 site: 限制（含括号 OR 组合格式），保留其余关键词
+// 前缀 (^|[\s(]) 确保不会误删 "-site:xxx" 这类排除写法中的 site: 部分
+function stripSiteFilters(q) {
+    return (q || '')
+        .replace(/(^|[\s(])\s*\(?\s*site:[^\s"()]+(?:\s+OR\s+site:[^\s"()]+)*\s*?\)?/gi, '$1')
+        .replace(/\s*OR\s*/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
 // 4. 状态检测逻辑
 function getTimeFilterTbs() {
     return `cdr:1,cd_min:1/1/${modernYear}`;
@@ -18,7 +44,7 @@ function isTimeFilterActive() {
 function getActiveSiteDomain() {
     const urlParams = new URLSearchParams(window.location.search);
     const q = urlParams.get('q') || '';
-    const m = q.match(/site:([^\s"]+)/i);
+    const m = q.match(/site:([^\s"()]+)/i);
     return m ? m[1].toLowerCase() : null;
 }
 
@@ -26,7 +52,7 @@ function getActiveSiteDomain() {
 function getActiveSiteDomains() {
     const urlParams = new URLSearchParams(window.location.search);
     const q = urlParams.get('q') || '';
-    const matches = q.match(/site:([^\s"]+)/gi) || [];
+    const matches = q.match(/site:([^\s"()]+)/gi) || [];
     return matches.map(m => m.replace(/site:/i, '').toLowerCase());
 }
 
@@ -67,7 +93,7 @@ function toggleSelectAll() {
     } else {
         // 全部开启
         if (!titleActive) {
-            let core = val.replace(/\s*site:[^\s]+/gi, '').trim();
+            let core = stripSiteFilters(val);
             if (core && !/^".+"$/.test(core)) core = `"${core}"`;
             if (core) val = val.replace(core, `intitle:${core}`);
         }
@@ -91,9 +117,9 @@ function toggleTitleSearch() {
     let val = searchBox.value.trim();
     if (!val) return;
     
-    const siteMatch = val.match(/site:[^\s]+/gi);
-    const siteStr = siteMatch ? siteMatch.join(' ') : '';
-    let core = val.replace(/\s*site:[^\s]+/gi, '').replace(/intitle:/gi, '').trim();
+    // 保留并重建已有 site 组合（(site:A OR site:B) 格式），避免括号与 OR 丢失
+    const siteGroup = buildSiteGroup(extractSiteDomains(val));
+    let core = stripSiteFilters(val).replace(/intitle:/gi, '').trim();
     
     if (!/intitle:/i.test(val)) {
         if (core && !/^".+"$/.test(core)) core = `"${core}"`;
@@ -102,7 +128,7 @@ function toggleTitleSearch() {
         if (core && !/^".+"$/.test(core)) core = `"${core}"`;
     }
     
-    searchBox.value = `${core} ${siteStr}`.trim();
+    searchBox.value = `${core} ${siteGroup}`.trim();
     const form = searchBox.closest('form');
     if (form) {
         const urlParams = new URLSearchParams(window.location.search);
@@ -122,12 +148,12 @@ function handleNewSearch(newKeyword) {
     const searchBox = document.querySelector('textarea[name="q"], input[name="q"]');
     if (!searchBox) return;
 
-    const siteMatch = searchBox.value.match(/site:[^\s]+/gi);
+    const siteGroup = buildSiteGroup(extractSiteDomains(searchBox.value));
     const titleActive = document.querySelector('.title-search-btn')?.classList.contains('time-filter-active');
 
     let nextQuery = /^".+"$/.test(newKeyword) ? newKeyword : `"${newKeyword}"`;
     if (titleActive) nextQuery = `intitle:${nextQuery}`;
-    if (siteMatch) nextQuery = `${nextQuery} ${siteMatch.join(' ')}`;
+    if (siteGroup) nextQuery = `${nextQuery} ${siteGroup}`;
 
     searchBox.value = nextQuery;
     
@@ -148,8 +174,7 @@ function handleNewSearch(newKeyword) {
 function appendSiteToSearch(domain) {
     const searchBox = document.querySelector('textarea[name="q"], input[name="q"]');
     if (searchBox) {
-        let val = searchBox.value.trim();
-        val = val.replace(/\s*site:[^\s]+/gi, '').trim();
+        let val = stripSiteFilters(searchBox.value);
         if (val && !(/^".+"$/.test(val)) && !val.toLowerCase().includes('intitle:')) val = `"${val}"`;
         searchBox.value = `${val} site:${domain}`;
         const form = searchBox.closest('form');
@@ -163,8 +188,8 @@ function appendSitesToSearch(domains, mode) {
     const searchBox = document.querySelector('textarea[name="q"], input[name="q"]');
     if (!searchBox) return;
     let val = searchBox.value.trim();
-    // 去掉已有的 site: 限制、intitle 与多余引号，重新组合
-    val = val.replace(/\s*site:[^\s]+/gi, '').replace(/intitle:/gi, '').trim();
+    // 去掉已有的 site: 限制（含组合格式）、intitle 与多余引号，重新组合
+    val = stripSiteFilters(val).replace(/intitle:/gi, '').trim();
     if (val && !(/^".+"$/.test(val))) val = `"${val}"`;
     const combined = '(' + domains.map(d => `site:${d}`).join(' OR ') + ')';
     let finalVal = val ? `${val} ${combined}` : combined;
@@ -213,7 +238,7 @@ function enableAutoHighlight() {
         if (targetLink && targetLink.href && targetLink.href.startsWith('http') && targetLink.closest('#rso')) {
             const searchBox = document.querySelector('textarea[name="q"], input[name="q"]');
             if (!searchBox) return;
-            let query = searchBox.value.trim().replace(/\s*site:[^\s]+/gi, '').replace(/intitle:/gi, '').replace(/^"|"$/g, '').trim();
+            let query = stripSiteFilters(searchBox.value).replace(/intitle:/gi, '').replace(/^"|"$/g, '').trim();
             if (query) {
                 const encoded = encodeURIComponent(query);
                 if (!targetLink.href.includes('#:~:text=')) {
