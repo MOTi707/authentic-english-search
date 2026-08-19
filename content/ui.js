@@ -1,268 +1,14 @@
-// 1. 多语言适配
-const isChinese = navigator.language.toLowerCase().includes('zh');
-const i18n = {
-    title: isChinese ? "一键指定站点" : "Quick Site Search",
-    showMore: isChinese ? "显示更多 »" : "Show More »",
-    showLess: isChinese ? "收起 «" : "Show Less «"
-};
-
-// 2. 站点数据
-const defaultPrimarySites = [
-    { name: "The Economist", domain: "economist.com" },
-    { name: "BBC", domain: "bbc.com" },
-    { name: "Washington Post", domain: "washingtonpost.com" },
-    { name: "Sixth Tone", domain: "sixthtone.com" },
-    { name: "SCMP", domain: "scmp.com" }
-];
-
-const defaultSecondarySites = [
-    { name: "Vox", domain: "vox.com" },
-    { name: "The New York Times", domain: "nytimes.com" },
-    { name: "Reuters", domain: "reuters.com" },
-    { name: "ABC News", domain: "abcnews.go.com" },
-    { name: "The Atlantic", domain: "theatlantic.com" },
-    { name: "Wired", domain: "wired.com" },
-    { name: "Smithsonian Magazine", domain: "smithsonianmag.com" },
-    { name: "Slate", domain: "slate.com" }
-];
-
-let primarySites = [...defaultPrimarySites];
-let secondarySites = [...defaultSecondarySites];
-let customSites = [];
-
-// 2.5 站点排序持久化（chrome.storage.sync）
-let dragSrcDomain = null;
-let dragSrcContainer = null;
-let panelExpanded = true;
-let keywordJumpEnabled = true;
-let modernYear = 2020;
-let quickSearchSlots = [[], [], []]; // 每个 slot 为 { name, domain } 数组（支持多选组合搜索）
-let quickButtonModes = ['', '', '']; // 每个快捷按钮的搜索模式：'' 普通 / 'title' 标题 / 'modern' 现代 / 'both' 标题+现代
-
-async function loadPanelState() {
-    try {
-        const result = await chrome.storage.local.get('panelExpanded');
-        if (typeof result.panelExpanded === 'boolean') {
-            panelExpanded = result.panelExpanded;
-        }
-    } catch (e) {}
-}
-
-function savePanelState() {
-    try {
-        chrome.storage.local.set({ panelExpanded: panelExpanded });
-    } catch (e) {}
-}
-
-async function loadKeywordJumpSetting() {
-    try {
-        const result = await chrome.storage.local.get('keywordJumpEnabled');
-        if (typeof result.keywordJumpEnabled === 'boolean') {
-            keywordJumpEnabled = result.keywordJumpEnabled;
-        }
-    } catch (e) {}
-}
-
-function saveKeywordJumpSetting() {
-    try {
-        chrome.storage.local.set({ keywordJumpEnabled: keywordJumpEnabled });
-    } catch (e) {}
-}
-
-async function loadModernYearSetting() {
-    try {
-        const result = await chrome.storage.local.get('modernYear');
-        const y = parseInt(result.modernYear, 10);
-        const thisYear = new Date().getFullYear();
-        if (y && y >= 1990 && y <= thisYear) {
-            modernYear = y;
-        }
-    } catch (e) {}
-}
-
-function saveModernYearSetting() {
-    try {
-        chrome.storage.local.set({ modernYear: modernYear });
-    } catch (e) {}
-}
-
-function getAllSites() {
-    return [...primarySites, ...secondarySites, ...customSites];
-}
-
-async function loadQuickSearchSlots() {
-    try {
-        const result = await chrome.storage.local.get(['quickSearchSlots', 'quickButtonModes']);
-        const stored = result.quickSearchSlots;
-        if (Array.isArray(stored) && stored.length === 3) {
-            // 兼容旧格式（旧版为单个站点对象或 null）
-            quickSearchSlots = stored.map(slot => {
-                if (Array.isArray(slot)) return slot;
-                if (slot && slot.domain) return [{ name: slot.name, domain: slot.domain }];
-                return [];
-            });
-        }
-        if (Array.isArray(result.quickButtonModes) && result.quickButtonModes.length === 3) {
-            quickButtonModes = result.quickButtonModes.map(m => ['', 'title', 'modern', 'both'].includes(m) ? m : '');
-        }
-    } catch (e) {}
-}
-
-function saveQuickSearchSlots() {
-    try {
-        chrome.storage.local.set({
-            quickSearchSlots: quickSearchSlots,
-            quickButtonModes: quickButtonModes
-        });
-    } catch (e) {}
-}
-
-async function loadCustomSites() {
-    try {
-        const result = await chrome.storage.sync.get('customSites');
-        if (result.customSites && Array.isArray(result.customSites)) {
-            customSites = result.customSites;
-        }
-    } catch (e) {}
-}
-
-function saveCustomSites() {
-    try {
-        chrome.storage.sync.set({ customSites: customSites });
-    } catch (e) {}
-}
-
-function addCustomSite(name, domain) {
-    const cleanedDomain = domain.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-    if (!name.trim() || !cleanedDomain) return false;
-    // 检查是否已存在
-    const allSites = [...primarySites, ...secondarySites, ...customSites];
-    if (allSites.some(s => s.domain === cleanedDomain)) return false;
-    customSites.push({ name: name.trim(), domain: cleanedDomain });
-    saveCustomSites();
-    return true;
-}
-
-function removeCustomSite(domain) {
-    const idx = customSites.findIndex(s => s.domain === domain);
-    if (idx !== -1) {
-        customSites.splice(idx, 1);
-        saveCustomSites();
-    }
-    // 若快捷搜索槽引用了该域名，同步清空
-    let quickChanged = false;
-    quickSearchSlots.forEach((slot, i) => {
-        const idx = slot.findIndex(s => s.domain === domain);
-        if (idx !== -1) {
-            quickSearchSlots[i].splice(idx, 1);
-            quickChanged = true;
-        }
-    });
-    if (quickChanged) saveQuickSearchSlots();
-}
-
-async function loadSiteOrder() {
-    try {
-        const result = await chrome.storage.sync.get(['primarySitesOrder', 'secondarySitesOrder']);
-        if (result.primarySitesOrder && Array.isArray(result.primarySitesOrder)) {
-            const orderMap = {};
-            result.primarySitesOrder.forEach((domain, i) => orderMap[domain] = i);
-            primarySites.sort((a, b) => (orderMap[a.domain] ?? 999) - (orderMap[b.domain] ?? 999));
-        }
-        if (result.secondarySitesOrder && Array.isArray(result.secondarySitesOrder)) {
-            const orderMap = {};
-            result.secondarySitesOrder.forEach((domain, i) => orderMap[domain] = i);
-            secondarySites.sort((a, b) => (orderMap[a.domain] ?? 999) - (orderMap[b.domain] ?? 999));
-        }
-    } catch (e) {}
-}
-
-function saveSiteOrder() {
-    try {
-        chrome.storage.sync.set({
-            primarySitesOrder: primarySites.map(s => s.domain),
-            secondarySitesOrder: secondarySites.map(s => s.domain)
-        });
-    } catch (e) {}
-}
-
-// 3. 核心功能：带 Base64 本地缓存的图标加载
-async function loadIconWithCache(domain, imgElement) {
-    const cacheKey = `site_icon_${domain}`;
-    // 优先使用 chrome.storage.local 读取缓存
-    try {
-        const cached = await chrome.storage.local.get(cacheKey);
-        if (cached[cacheKey]) {
-            imgElement.src = cached[cacheKey];
-            return;
-        }
-    } catch (e) {}
-    const defaultUrl = `https://www.google.com/s2/favicons?sz=32&domain=${domain}`;
-    imgElement.src = defaultUrl;
-    try {
-        const response = await fetch(defaultUrl);
-        const blob = await response.blob();
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            const base64data = reader.result;
-            try { chrome.storage.local.set({ [cacheKey]: base64data }); } catch (e) {}
-        };
-        reader.readAsDataURL(blob);
-    } catch (error) {}
-}
-
-// 4. 状态检测逻辑
-function getTimeFilterTbs() {
-    return `cdr:1,cd_min:1/1/${modernYear}`;
-}
-
-function isTimeFilterActive() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const host = window.location.host;
-    if (host.includes('google')) return urlParams.get('tbs') === getTimeFilterTbs();
-    return false;
-}
-
-// 读取当前 URL 中已激活的 site: 域名（与"现代"按钮同色高亮选中站点用）
-function getActiveSiteDomain() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const q = urlParams.get('q') || '';
-    const m = q.match(/site:([^\s"]+)/i);
-    return m ? m[1].toLowerCase() : null;
-}
-
-// 读取当前 URL 中所有已激活的 site: 域名（组合搜索高亮用）
-function getActiveSiteDomains() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const q = urlParams.get('q') || '';
-    const matches = q.match(/site:([^\s"]+)/gi) || [];
-    return matches.map(m => m.replace(/site:/i, '').toLowerCase());
-}
-
-// 修改起始年份后，将已激活的 URL 过滤参数同步为新年份（不触发跳转）
-function applyModernYearToUrl() {
-    const url = new URL(window.location.href);
-    const tbs = url.searchParams.get('tbs');
-    if (tbs && tbs.startsWith('cdr:1,cd_min:')) {
-        url.searchParams.set('tbs', getTimeFilterTbs());
-        window.history.replaceState(null, '', url.toString());
-    }
-    const modernBtn = document.querySelector('.modern-content-btn');
-    if (modernBtn) modernBtn.classList.toggle('time-filter-active', isTimeFilterActive());
-}
-
-function isTitleSearchActive() {
-    const searchBox = document.querySelector('textarea[name="q"], input[name="q"]');
-    if (searchBox && /intitle:/i.test(searchBox.value)) return true;
-    const urlParams = new URLSearchParams(window.location.search);
-    const q = urlParams.get('q') || '';
-    return /intitle:/i.test(q);
-}
+// ============================================================
+// ui.js — 面板 UI（createFloatingPanel）/ 初始化
+// 依赖：internationalization.js → sites.js → search.js（按 manifest 顺序先加载）
+// 巨型函数按段落用注释分节，后续可按需继续抽成子函数
+// ============================================================
 
 // 5. UI 创建逻辑
 function createFloatingPanel() {
     if (document.getElementById('site-search-floating-panel')) return;
 
+    // ---- 5.1 面板骨架 ----
     const panel = document.createElement('div');
     panel.id = 'site-search-floating-panel';
 
@@ -293,6 +39,7 @@ function createFloatingPanel() {
     title.innerText = i18n.title;
     panel.appendChild(title);
 
+    // ---- 5.2 站点按钮 DOM 构造（含拖拽） ----
     const createBtnDOM = (site, container) => {
         const isCustom = container === 'custom';
         const btn = document.createElement('button');
@@ -354,6 +101,7 @@ function createFloatingPanel() {
         return btn;
     };
 
+    // ---- 5.3 拖拽移动逻辑 + 按钮重绘 ----
     // 站点拖动逻辑：同级别内部排序 + 一级↔二级↔自定义互相移动
     const moveSite = (fromContainer, toContainer, fromDomain, toDomain) => {
         const getArr = c => c === 'primary' ? primarySites : c === 'secondary' ? secondarySites : customSites;
@@ -378,7 +126,9 @@ function createFloatingPanel() {
     // 重绘一级/二级站点按钮（保持二级菜单内原有元素顺序）
     const renderSiteButtons = () => {
         panel.querySelectorAll('.site-search-btn[data-drag-container="primary"]').forEach(b => b.remove());
-        primarySites.forEach(s => panel.insertBefore(createBtnDOM(s, 'primary'), searchInput));
+        // 一级按钮插到快捷搜索容器之前，保持「快捷按钮紧贴搜索框上方」的布局
+        const primaryRef = quickSearchContainer || searchInput;
+        primarySites.forEach(s => panel.insertBefore(createBtnDOM(s, 'primary'), primaryRef));
         moreContainer.querySelectorAll('.site-search-btn[data-drag-container="secondary"]').forEach(b => b.remove());
         // 插入到二级菜单中第一个非二级站点元素之前（自定义站点/设置按钮/设置页）
         const refNode = moreContainer.firstChild;
@@ -387,7 +137,7 @@ function createFloatingPanel() {
 
     primarySites.forEach(site => panel.appendChild(createBtnDOM(site, 'primary')));
 
-    // 搜索输入框
+    // ---- 5.4 搜索输入框 ----
     const searchInput = document.createElement('input');
     searchInput.type = 'text';
     searchInput.className = 'site-search-input';
@@ -397,7 +147,7 @@ function createFloatingPanel() {
     });
     panel.appendChild(searchInput);
 
-    // --- 横向按钮组 A|B|C ---
+    // ---- 5.5 横向按钮组 A|B|C ----
     const btnGroup = document.createElement('div');
     btnGroup.className = 'btn-group';
 
@@ -423,7 +173,7 @@ function createFloatingPanel() {
     btnGroup.appendChild(allBtn);
     panel.appendChild(btnGroup);
 
-    // 展开更多按钮
+    // ---- 5.6 二级菜单（moreContainer）骨架 ----
     const moreContainer = document.createElement('div');
     moreContainer.id = 'more-sites-container';
     secondarySites.forEach(site => moreContainer.appendChild(createBtnDOM(site, 'secondary')));
@@ -438,22 +188,30 @@ function createFloatingPanel() {
     settingsBtn.innerText = isChinese ? '设置' : 'Settings';
     moreContainer.appendChild(settingsBtn);
 
-    // 快捷搜索按钮（设置按钮上方，1/2/3 快速搜索）
+    // ---- 5.7 快捷搜索按钮（一级菜单搜索输入框上方，1/2/3 快速搜索） ----
     const quickSearchContainer = document.createElement('div');
     quickSearchContainer.className = 'quick-search-container';
     quickSearchContainer.id = 'site-search-quick-container';
-    moreContainer.insertBefore(quickSearchContainer, settingsBtn);
+    panel.insertBefore(quickSearchContainer, searchInput);
 
     const renderQuickSearchButtons = () => {
         quickSearchContainer.innerHTML = '';
         const allSites = getAllSites();
         const activeDomains = getActiveSiteDomains();
-        quickSearchSlots.forEach((slot, idx) => {
-            if (!slot || !slot.length) return; // 未分配则隐藏
-            // slot 中可能包含已被删除的站点，过滤掉无效项
+        // 固定渲染 3 个槽位：左 / 中 / 右；未分配的用不可见占位保持布局
+        for (let idx = 0; idx < 3; idx++) {
+            const slot = quickSearchSlots[idx] || [];
             const validSites = slot.filter(s => allSites.some(a => a.domain === s.domain));
-            if (!validSites.length) return;
             const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.dataset.slot = String(idx);
+            if (!validSites.length) {
+                btn.className = 'quick-search-btn quick-slot-placeholder';
+                btn.disabled = true;
+                btn.tabIndex = -1;
+                quickSearchContainer.appendChild(btn);
+                continue;
+            }
             // 每个槽位固定配色：1 红 / 2 黑 / 3 蓝（NPR 色调）
             btn.className = 'quick-search-btn quick-slot-' + idx;
             // 当组合内的所有站点都已在当前 URL 生效，且模式匹配时，视为激活高亮
@@ -465,25 +223,17 @@ function createFloatingPanel() {
             else if (mode === 'modern') modeOk = isTimeFilterActive();
             else if (mode === 'both') modeOk = isTitleSearchActive() && isTimeFilterActive();
             if (allActive && modeOk) btn.classList.add('site-active');
-            // 按钮文字：显示模式（无模式则显示编号）
-            const modeText = {
-                '': null,
-                title: isChinese ? '标题' : 'Title',
-                modern: isChinese ? '现代' : 'Modern',
-                both: isChinese ? '全部' : 'All'
-            }[mode];
-            btn.innerText = modeText || String(idx + 1);
+            btn.innerText = String(idx + 1); // 始终显示编号 1/2/3
             const names = validSites.map(s => s.name).join(' + ');
             btn.title = isChinese
                 ? `组合搜索：${names}`
                 : `Combined: ${names}`;
-            btn.dataset.slot = String(idx);
             quickSearchContainer.appendChild(btn);
-        });
+        }
     };
     renderQuickSearchButtons();
 
-    // ---- 设置悬浮页（点击“设置”后打开） ----
+    // ---- 5.8 设置悬浮页 ----
     const settingsPanel = document.createElement('div');
     settingsPanel.id = 'site-search-settings-panel';
 
@@ -555,7 +305,7 @@ function createFloatingPanel() {
     modernRow.appendChild(modernInput);
     settingsPanel.appendChild(modernRow);
 
-    // 快捷搜索定制（1/2/3 号按钮：标题 + 站点多选），默认收起，点击展开按钮后才显示
+    // 快捷搜索定制（1/2/3 号按钮：模式 + 站点多选），默认收起，点击展开按钮后才显示
     let quickSettingsExpanded = false;
     const quickSettingsContainer = document.createElement('div');
     quickSettingsContainer.id = 'site-search-quick-settings';
@@ -576,10 +326,6 @@ function createFloatingPanel() {
             // 搜索模式：标题 / 现代（可多选，样式与一级页面按钮组一致）
             const modeRow = document.createElement('div');
             modeRow.className = 'quick-setting-mode-row';
-            const modeLabel = document.createElement('span');
-            modeLabel.className = 'quick-setting-mode-label';
-            modeLabel.innerText = isChinese ? '模式' : 'Mode';
-            modeRow.appendChild(modeLabel);
             const modeGroup = document.createElement('div');
             modeGroup.className = 'btn-group quick-setting-mode-group';
             const isModeOn = (m, part) => m === part || m === 'both';
@@ -623,38 +369,43 @@ function createFloatingPanel() {
             syncModeBtns();
             modeRow.appendChild(modeGroup);
             section.appendChild(modeRow);
+            // 站点选择卡片（复用一级页面按钮样式，紧凑版）
+            const sitesWrap = document.createElement('div');
+            sitesWrap.className = 'quick-setting-sites';
             allSites.forEach(site => {
-                const cbRow = document.createElement('label');
-                cbRow.className = 'quick-setting-check';
-                const cb = document.createElement('input');
-                cb.type = 'checkbox';
-                cb.checked = slot.some(s => s.domain === site.domain);
-                cb.addEventListener('change', () => {
-                    const existing = quickSearchSlots[idx].findIndex(s => s.domain === site.domain);
-                    if (cb.checked && existing === -1) {
-                        quickSearchSlots[idx].push({ name: site.name, domain: site.domain });
-                    } else if (!cb.checked && existing !== -1) {
-                        quickSearchSlots[idx].splice(existing, 1);
-                    }
-                    saveQuickSearchSlots();
-                    renderQuickSearchButtons();
-                });
-                const cbText = document.createElement('span');
-                cbText.innerText = site.name;
-                // 站点图标（复用带缓存的 favicon 加载）
+                const card = document.createElement('button');
+                card.type = 'button';
+                card.className = 'site-search-btn quick-setting-site-card';
+                if (slot.some(s => s.domain === site.domain)) card.classList.add('site-active');
                 const icon = document.createElement('img');
                 icon.className = 'site-icon quick-setting-site-icon';
                 icon.alt = '';
                 loadIconWithCache(site.domain, icon);
-                cbRow.appendChild(cb);
-                cbRow.appendChild(icon);
-                cbRow.appendChild(cbText);
-                section.appendChild(cbRow);
+                card.appendChild(icon);
+                const text = document.createElement('span');
+                text.innerText = site.name;
+                card.appendChild(text);
+                card.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const existing = quickSearchSlots[idx].findIndex(s => s.domain === site.domain);
+                    if (existing === -1) {
+                        quickSearchSlots[idx].push({ name: site.name, domain: site.domain });
+                        card.classList.add('site-active');
+                    } else {
+                        quickSearchSlots[idx].splice(existing, 1);
+                        card.classList.remove('site-active');
+                    }
+                    saveQuickSearchSlots();
+                    renderQuickSearchButtons();
+                });
+                sitesWrap.appendChild(card);
             });
+            section.appendChild(sitesWrap);
             quickSettingsContainer.appendChild(section);
         });
     };
 
+    // + 添加站点按钮
     const addSiteBtn = document.createElement('button');
     addSiteBtn.className = 'site-search-btn toggle-btn';
     addSiteBtn.innerText = isChinese ? '+ 添加站点' : '+ Add site';
@@ -692,7 +443,7 @@ function createFloatingPanel() {
     customList.id = 'site-search-custom-list';
     settingsPanel.appendChild(customList);
 
-    // 快捷按钮自定义（标题 + 站点多选）放在“+ 添加站点”下方
+    // 快捷按钮自定义（模式 + 站点多选）放在“+ 添加站点”下方
     const quickSettingsToggle = document.createElement('div');
     quickSettingsToggle.className = 'quick-settings-toggle';
     const toggleTitle = document.createElement('span');
@@ -754,6 +505,7 @@ function createFloatingPanel() {
         customSites.forEach(s => moreContainer.insertBefore(createBtnDOM(s, 'custom'), settingsBtn));
     };
 
+    // ---- 5.9 组装与事件委托 ----
     moreContainer.appendChild(settingsPanel);
     renderCustomSitesList();
 
@@ -854,148 +606,7 @@ function createFloatingPanel() {
     document.body.appendChild(panel);
 }
 
-// 6. 切换逻辑
-function toggleSelectAll() {
-    const titleActive = isTitleSearchActive();
-    const timeActive = isTimeFilterActive();
-    const searchBox = document.querySelector('textarea[name="q"], input[name="q"]');
-    if (!searchBox) return;
-    
-    let url = new URL(window.location.href);
-    let val = searchBox.value.trim();
-    
-    if (titleActive && timeActive) {
-        // 全部关闭
-        val = val.replace(/intitle:/gi, '').trim();
-        url.searchParams.delete('tbs');
-    } else {
-        // 全部开启
-        if (!titleActive) {
-            let core = val.replace(/\s*site:[^\s]+/gi, '').trim();
-            if (core && !/^".+"$/.test(core)) core = `"${core}"`;
-            if (core) val = val.replace(core, `intitle:${core}`);
-        }
-        url.searchParams.set('tbs', getTimeFilterTbs());
-    }
-    
-    url.searchParams.set('q', val);
-    window.location.href = url.toString();
-}
-
-function toggleTimeFilter() {
-    const url = new URL(window.location.href);
-    const isActive = isTimeFilterActive();
-    isActive ? url.searchParams.delete('tbs') : url.searchParams.set('tbs', getTimeFilterTbs());
-    window.location.href = url.toString();
-}
-
-function toggleTitleSearch() {
-    const searchBox = document.querySelector('textarea[name="q"], input[name="q"]');
-    if (!searchBox) return;
-    let val = searchBox.value.trim();
-    if (!val) return;
-    
-    const siteMatch = val.match(/site:[^\s]+/gi);
-    const siteStr = siteMatch ? siteMatch.join(' ') : '';
-    let core = val.replace(/\s*site:[^\s]+/gi, '').replace(/intitle:/gi, '').trim();
-    
-    if (!/intitle:/i.test(val)) {
-        if (core && !/^".+"$/.test(core)) core = `"${core}"`;
-        core = `intitle:${core}`;
-    } else {
-        if (core && !/^".+"$/.test(core)) core = `"${core}"`;
-    }
-    
-    searchBox.value = `${core} ${siteStr}`.trim();
-    const form = searchBox.closest('form');
-    if (form) {
-        const urlParams = new URLSearchParams(window.location.search);
-        const tbs = urlParams.get('tbs');
-        if (tbs && !form.querySelector('input[name="tbs"]')) {
-            const i = document.createElement('input'); i.type = 'hidden'; i.name = 'tbs'; i.value = tbs; form.appendChild(i);
-        }
-        form.submit();
-    } else {
-        searchBox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
-    }
-}
-
-// 7. 执行搜索逻辑
-function handleNewSearch(newKeyword) {
-    if (!newKeyword) return;
-    const searchBox = document.querySelector('textarea[name="q"], input[name="q"]');
-    if (!searchBox) return;
-
-    const siteMatch = searchBox.value.match(/site:[^\s]+/gi);
-    const titleActive = document.querySelector('.title-search-btn')?.classList.contains('time-filter-active');
-
-    let nextQuery = /^".+"$/.test(newKeyword) ? newKeyword : `"${newKeyword}"`;
-    if (titleActive) nextQuery = `intitle:${nextQuery}`;
-    if (siteMatch) nextQuery = `${nextQuery} ${siteMatch.join(' ')}`;
-
-    searchBox.value = nextQuery;
-    
-    const form = searchBox.closest('form');
-    if (form) {
-        const urlParams = new URLSearchParams(window.location.search);
-        const v = urlParams.get('tbs');
-        if (v && !form.querySelector('input[name="tbs"]')) {
-            const i = document.createElement('input'); i.type = 'hidden'; i.name = 'tbs'; i.value = v;
-            form.appendChild(i);
-        }
-        form.submit();
-    } else {
-        searchBox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
-    }
-}
-
-function appendSiteToSearch(domain) {
-    const searchBox = document.querySelector('textarea[name="q"], input[name="q"]');
-    if (searchBox) {
-        let val = searchBox.value.trim();
-        val = val.replace(/\s*site:[^\s]+/gi, '').trim();
-        if (val && !(/^".+"$/.test(val)) && !val.toLowerCase().includes('intitle:')) val = `"${val}"`;
-        searchBox.value = `${val} site:${domain}`;
-        const form = searchBox.closest('form');
-        form ? form.submit() : searchBox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
-    }
-}
-
-// 组合搜索：把多个站点用 OR 组合成 (site:A OR site:B OR site:C)，可叠加标题/现代模式
-function appendSitesToSearch(domains, mode) {
-    if (!domains || !domains.length) return;
-    const searchBox = document.querySelector('textarea[name="q"], input[name="q"]');
-    if (!searchBox) return;
-    let val = searchBox.value.trim();
-    // 去掉已有的 site: 限制、intitle 与多余引号，重新组合
-    val = val.replace(/\s*site:[^\s]+/gi, '').replace(/intitle:/gi, '').trim();
-    if (val && !(/^".+"$/.test(val))) val = `"${val}"`;
-    const combined = '(' + domains.map(d => `site:${d}`).join(' OR ') + ')';
-    let finalVal = val ? `${val} ${combined}` : combined;
-    // 标题模式：对关键词加 intitle:
-    if ((mode === 'title' || mode === 'both') && val) {
-        finalVal = `intitle:${val} ${combined}`;
-    }
-    searchBox.value = finalVal;
-    const form = searchBox.closest('form');
-    if (form) {
-        // 现代模式：确保 tbs 参数随表单提交
-        if (mode === 'modern' || mode === 'both') {
-            if (!form.querySelector('input[name="tbs"]')) {
-                const i = document.createElement('input');
-                i.type = 'hidden';
-                i.name = 'tbs';
-                i.value = getTimeFilterTbs();
-                form.appendChild(i);
-            }
-        }
-        form.submit();
-    } else {
-        searchBox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
-    }
-}
-
-// 8. 初始化与高亮
+// 8. 初始化
 async function init() {
     await loadCustomSites();
     await loadSiteOrder();
@@ -1014,39 +625,6 @@ async function init() {
         }, 300);
     });
     observer.observe(document.body, { childList: true, subtree: true });
-}
-
-function enableShortcut() {
-    document.addEventListener('keydown', (e) => {
-        if (e.altKey && e.key.toLowerCase() === 'm') {
-            e.preventDefault();
-            const panel = document.getElementById('site-search-floating-panel');
-            if (!panel) return;
-            panelExpanded = !panelExpanded;
-            panel.classList.toggle('panel-collapsed', !panelExpanded);
-            savePanelState();
-        }
-    });
-}
-
-function enableAutoHighlight() {
-    document.addEventListener('click', function(e) {
-        if (!keywordJumpEnabled) return;
-        const targetLink = e.target.closest('a');
-        // 仅作用于搜索结果区（#rso）内的链接，避免干扰页面其他链接
-        if (targetLink && targetLink.href && targetLink.href.startsWith('http') && targetLink.closest('#rso')) {
-            const searchBox = document.querySelector('textarea[name="q"], input[name="q"]');
-            if (!searchBox) return;
-            let query = searchBox.value.trim().replace(/\s*site:[^\s]+/gi, '').replace(/intitle:/gi, '').replace(/^"|"$/g, '').trim();
-            if (query) {
-                const encoded = encodeURIComponent(query);
-                if (!targetLink.href.includes('#:~:text=')) {
-                    const sep = targetLink.href.includes('#') ? '&' : '#';
-                    targetLink.href = `${targetLink.href}${sep}:~:text=${encoded}`;
-                }
-            }
-        }
-    }, true); 
 }
 
 init().catch(console.error);
