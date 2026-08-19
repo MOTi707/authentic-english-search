@@ -113,6 +113,14 @@
     z-index: 2 !important; /* 核心：激活时层级最高，确保蓝色边框压住相邻的灰色边框 */
 }
 
+/* 当前选中的站点（与"现代"按钮同色高亮） */
+.site-search-btn.site-active {
+    background-color: #e8f0fe;
+    border-color: #1a73e8 !important;
+    color: #1a73e8;
+    z-index: 2;
+}
+
 /* 输入框 */
 .site-search-input {
     padding: 8px 12px;
@@ -210,7 +218,6 @@
     gap: 6px;
     margin-top: 4px;
     padding-top: 8px;
-    border-top: 1px solid #dadce0;
 }
 .form-btn-group {
     display: flex;
@@ -226,9 +233,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 8px 4px 4px;
-    border-top: 1px solid #dadce0;
-    margin-top: 4px;
+    padding: 8px 4px;
 }
 .setting-label {
     font-size: 13px;
@@ -263,4 +268,245 @@
 }
 .switch-toggle.switch-on::after {
     left: 18px;
+}
+
+/* 设置按钮（二级菜单底部） */
+#site-search-settings-btn {
+    margin-top: 4px;
+}
+
+/* 现代内容起始年份输入框 */
+.modern-year-input {
+    width: 76px !important;
+    flex-shrink: 0;
+    text-align: center;
+}
+
+/* 设置悬浮页 */
+#site-search-settings-panel {
+    display: none;
+    position: absolute;
+    right: calc(100% + 12px);
+    bottom: 0;
+    background-color: #ffffff;
+    border: 1px solid #dadce0;
+    border-radius: 8px;
+    padding: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    flex-direction: column;
+    gap: 8px;
+    z-index: 999999;
+    min-width: 220px;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+#site-search-settings-panel.settings-visible {
+    display: flex;
+}
+
+.settings-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #dadce0;
+}
+.settings-title {
+    font-weight: bold;
+    font-size: 14px;
+    color: #202124;
+}
+.settings-close-btn {
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: #5f6368;
+    font-size: 16px;
+    line-height: 1;
+    padding: 2px 6px;
+}
+.settings-close-btn:hover {
+    color: #202124;
+}
+
+.settings-section-title {
+    font-size: 12px;
+    font-weight: bold;
+    color: #5f6368;
+    margin-top: 4px;
+    padding-top: 8px;
+    border-top: 1px solid #f1f3f4;
+}
+
+/* 设置页自定义站点列表 */
+#site-search-custom-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.custom-site-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    background-color: #f8f9fa;
+    border: 1px solid #dadce0;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #3c4043;
+}
+.custom-site-name {
+    font-weight: bold;
+    flex-shrink: 0;
+}
+.custom-site-domain {
+    flex: 1;
+    color: #80868b;
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.custom-site-del-btn {
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: #9aa0a6;
+    font-size: 16px;
+    line-height: 1;
+    padding: 0 4px;
+}
+.custom-site-del-btn:hover {
+    color: #d93025;
+}
+.settings-empty {
+    font-size: 12px;
+    color: #9aa0a6;
+    text-align: center;
+    padding: 6px 0;
+}
+
+/* 快捷搜索按钮（1/2/3） */
+.quick-search-container {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    padding: 4px 0 8px;
+}
+.quick-search-container:empty {
+    display: none;
+    padding: 0;
+}
+.quick-search-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid rgba(0, 0, 0, 0.25);
+    background-color: #f8f9fa;
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    transition: border-color 0.2s, box-shadow 0.2s, filter 0.2s;
+}
+/* 三个槽位固定配色（NPR 色调）：1 红 / 2 黑 / 3 蓝，文字白色 */
+.quick-slot-0 {
+    background-color: #e8000d;
+}
+.quick-slot-1 {
+    background-color: #1a1a1a;
+}
+.quick-slot-2 {
+    background-color: #0e7abf;
+}
+.quick-search-btn:hover {
+    filter: brightness(1.15);
+}
+.quick-search-btn.site-active {
+    border-color: #ffffff;
+    box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.65);
+    color: #ffffff;
+}
+
+/* 快捷搜索设置（多选站点组合） */
+.quick-settings-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 4px;
+    margin-top: 4px;
+    font-size: 13px;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.2s;
+}
+.quick-settings-toggle-title {
+    font-weight: bold;
+    color: #1a73e8;
+}
+.quick-settings-toggle-state {
+    font-size: 12px;
+    color: #9aa0a6;
+}
+.quick-settings-toggle:hover {
+    background-color: #f1f3f4;
+}
+.quick-setting-section {
+    padding: 4px 4px 2px;
+}
+.quick-setting-header {
+    font-size: 12px;
+    font-weight: bold;
+    color: #1a73e8;
+    margin-bottom: 3px;
+}
+.quick-setting-check {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: #3c4043;
+    padding: 1px 0;
+    cursor: pointer;
+    line-height: 1.2;
+}
+.quick-setting-check input[type="checkbox"] {
+    cursor: pointer;
+    accent-color: #1a73e8;
+    width: 13px;
+    height: 13px;
+    margin: 0;
+    flex-shrink: 0;
+}
+.quick-setting-site-icon {
+    width: 14px;
+    height: 14px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+.quick-setting-mode-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 1px 0 6px;
+    font-size: 12px;
+}
+.quick-setting-mode-label {
+    color: #3c4043;
+    font-weight: bold;
+    flex-shrink: 0;
+}
+.quick-setting-mode-group {
+    flex: 1;
+    margin-top: 0;
+}
+.quick-setting-mode-group .site-search-btn {
+    padding: 5px 4px;
+    font-size: 12px;
 }
